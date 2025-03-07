@@ -5,8 +5,8 @@ import seaborn as sns
 from datetime import datetime
 
 # Load dataset
-df_day = pd.read_csv("day.csv", delimiter=";")
-df_hour = pd.read_csv("hour.csv", delimiter=";")
+day = pd.read_csv('Dashboard/Data/day.csv')
+hour = pd.read_csv('Dashboard/Data/hour.csv')
 
 # Konversi tanggal
 df_day['dteday'] = pd.to_datetime(df_day['dteday'], dayfirst=True)
