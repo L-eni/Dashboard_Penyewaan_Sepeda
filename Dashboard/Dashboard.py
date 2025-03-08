@@ -2,117 +2,132 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from datetime import datetime
 
 # Load dataset
-df_day = pd.read_csv('Data/day.csv')
-df_hour = pd.read_csv('Data/hour.csv')
+def load_data():
+    day = pd.read_csv("Data/day.csv", sep=';') 
+    hour = pd.read_csv("Data/hour.csv", sep=';')
 
-# Konversi tanggal
-df_day['dteday'] = pd.to_datetime(df_day['dteday'], dayfirst=True)
-df_hour['dteday'] = pd.to_datetime(df_hour['dteday'], dayfirst=True)
+    # Konversi kolom 'dteday' ke datetime
+    day['dteday'] = pd.to_datetime(day['dteday'], dayfirst=True)
+    hour['dteday'] = pd.to_datetime(hour['dteday'], dayfirst=True)
 
-# Tema warna
-sns.set_style("whitegrid")
-sns.set_palette(["#5F9EA0"])  # Warna CadetBlue
+    # Tambahkan kolom tanggal agar bisa difilter
+    day['date'] = day['dteday'].dt.date
+    hour['date'] = hour['dteday'].dt.date
+    return day, hour
 
-# Mengatur warna latar belakang Streamlit
-st.markdown(
-    """
-    <style>
-        .main {
-            background-color: #B0E0E6;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+# Load data dengan perbaikan
+day_df, hour_df = load_data()
 
-# **📌 Tambahkan gambar sepeda di atas judul**
-st.image("logosepeda.png", width=150)
-st.title("🚴‍♂️ Dashboard Penyewaan Sepeda")
+# Perbaiki inisialisasi tanggal awal dan akhir
+min_date = min(day_df['date'])
+max_date = max(day_df['date'])
 
-# Sidebar Pemilihan Dataset
-st.sidebar.image("logosepeda.png", width=100)
-st.sidebar.title("🚴‍♂️ Dashboard Penyewaan Sepeda")
-dataset_choice = st.sidebar.radio("Pilih Dataset:", ["Harian", "Per Jam"])
+# Sidebar: Filter berdasarkan tanggal
+st.sidebar.header("Filter Data")
+start_date = st.sidebar.date_input("Pilih Tanggal Awal", min_date)
+end_date = st.sidebar.date_input("Pilih Tanggal Akhir", max_date)
 
-# Sidebar Rentang Tanggal
-start_date = st.sidebar.date_input("Tanggal Mulai", df_day['dteday'].min())
-end_date = st.sidebar.date_input("Tanggal Akhir", df_day['dteday'].max())
+# Filter dataset berdasarkan tanggal yang dipilih
+filtered_day_df = day_df[(day_df['date'] >= start_date) & (day_df['date'] <= end_date)]
+filtered_hour_df = hour_df[(hour_df['date'] >= start_date) & (hour_df['date'] <= end_date)]
 
-start_date = pd.to_datetime(start_date)
-end_date = pd.to_datetime(end_date)
 
-# Filter dataset berdasarkan rentang tanggal
-if dataset_choice == "Harian":
-    df_filtered = df_day[(df_day['dteday'] >= start_date) & (df_day['dteday'] <= end_date)]
+# Tampilkan pesan jika tidak ada data
+if filtered_day_df.empty or filtered_hour_df.empty:
+    st.error("⚠ Tidak ada data untuk rentang tanggal yang dipilih.")
+    st.stop()
+
+# Judul utama dashboard
+st.title("📊 Dashboard Penyewaan Sepeda 🚴‍♂")
+
+### 🔹 Tren Penyewaan Sepeda per Tahun
+st.subheader("Tren Penyewaan Sepeda per Tahun")
+
+# Agregasi jumlah penyewaan per tahun
+filtered_day_df['year'] = filtered_day_df['dteday'].dt.year
+yearly_trend = filtered_day_df.groupby('year')['cnt'].sum().reset_index()
+
+fig, ax = plt.subplots(figsize=(6, 4))
+sns.barplot(x='year', y='cnt', data=yearly_trend, ax=ax)
+ax.set_xlabel("Tahun")
+ax.set_ylabel("Total Penyewaan")
+st.pyplot(fig)
+
+# Menampilkan angka penting
+if len(yearly_trend) >= 2:
+    total_2011 = yearly_trend.loc[yearly_trend['year'] == 2011, 'cnt'].values[0] if 2011 in yearly_trend['year'].values else 0
+    total_2012 = yearly_trend.loc[yearly_trend['year'] == 2012, 'cnt'].values[0] if 2012 in yearly_trend['year'].values else 0
+    st.write(f"📌 Peningkatan penyewaan dari 2011 ke 2012: {total_2012 - total_2011} sepeda")
+
+
+### 🔹 Jam Sibuk Penyewaan Sepeda
+st.subheader("Jam Sibuk Penyewaan Sepeda")
+
+if 'hr' in filtered_hour_df.columns:
+    hourly_trend = filtered_hour_df.groupby('hr')['cnt'].mean().reset_index()
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    sns.lineplot(x='hr', y='cnt', data=hourly_trend, marker="o", ax=ax)
+    ax.set_xlabel("Jam dalam Sehari")
+    ax.set_ylabel("Rata-rata Penyewaan Sepeda")
+    st.pyplot(fig)
+
+    # Menampilkan jam puncak
+    peak_hour = hourly_trend.loc[hourly_trend['cnt'].idxmax(), 'hr']
+    st.write(f"📌 Jam tersibuk: {peak_hour}:00 dengan jumlah penyewaan tertinggi")
 else:
-    df_filtered = df_hour[(df_hour['dteday'] >= start_date) & (df_hour['dteday'] <= end_date)]
+    st.error("⚠ Data jam tidak ditemukan dalam dataset.")
 
-# **🔢 Ringkasan Data**
-col1, col2, col3 = st.columns(3)
-col1.metric("Total Penyewaan", df_filtered['cnt'].sum())
-col2.metric("Rata-rata Harian", round(df_filtered['cnt'].mean(), 2))
-col3.metric("Penyewaan Maksimum", df_filtered['cnt'].max())
 
-# **📊 Tren Penyewaan Sepeda**
-st.write("### 📆 Tren Penyewaan Sepeda Harian")
-fig, ax = plt.subplots(figsize=(10, 5))
-sns.lineplot(data=df_filtered, x="dteday", y="cnt", ax=ax, marker="o", linestyle="-")
-ax.set_title("Tren Penyewaan Sepeda Harian", color='black')
-ax.set_xlabel("Tanggal", color='black')
-ax.set_ylabel("Jumlah Penyewaan", color='black')
-plt.xticks(rotation=45, color='black')
-plt.yticks(color='black')
+### 🔹 Pengaruh Cuaca terhadap Penyewaan
+st.subheader("Pengaruh Cuaca terhadap Penyewaan")
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+# Scatter plot suhu vs penyewaan
+sns.scatterplot(ax=axes[0], x=filtered_day_df['temp'], y=filtered_day_df['cnt'], alpha=0.5, color='r')
+axes[0].set_title("Suhu vs Penyewaan")
+
+# Scatter plot kelembaban vs penyewaan
+sns.scatterplot(ax=axes[1], x=filtered_day_df['hum'], y=filtered_day_df['cnt'], alpha=0.5, color='g')
+axes[1].set_title("Kelembaban vs Penyewaan")
+
+# Scatter plot kecepatan angin vs penyewaan
+sns.scatterplot(ax=axes[2], x=filtered_day_df['windspeed'], y=filtered_day_df['cnt'], alpha=0.5, color='b')
+axes[2].set_title("Kecepatan Angin vs Penyewaan")
+
 st.pyplot(fig)
 
-# **🎯 Pengaruh Musim terhadap Penyewaan**
-st.write("### 🌦️ Pengaruh Musim terhadap Penyewaan")
-fig, ax = plt.subplots(figsize=(8, 5))
-sns.barplot(x="season", y="cnt", data=df_filtered, estimator=sum, palette="viridis", ax=ax)
-ax.set_xlabel("Musim")
-ax.set_ylabel("Total Penyewaan Sepeda")
-ax.set_title("Total Penyewaan Sepeda per Musim")
-ax.set_xticks([0, 1, 2, 3])
-ax.set_xticklabels(["Spring", "Summer", "Fall", "Winter"])
-st.pyplot(fig)
+st.write("📌 Cuaca mempengaruhi penyewaan sepeda:")
+st.write("- Penyewaan meningkat pada suhu sedang (tidak terlalu panas atau dingin)")
+st.write("- Kelembaban tinggi sedikit menurunkan penyewaan")
+st.write("- Kecepatan angin tidak terlalu berdampak signifikan")
 
-# **🌡️ Hubungan Suhu dengan Penyewaan**
-st.write("### 🌡️ Hubungan Suhu dengan Penyewaan Sepeda")
-fig, ax = plt.subplots(figsize=(8, 5))
-sns.scatterplot(x=df_filtered['temp'], y=df_filtered['cnt'], color="#5F9EA0", alpha=0.6, ax=ax)
-ax.set_title("Hubungan Antara Suhu dan Jumlah Penyewaan", color='black')
-ax.set_xlabel("Suhu (Normalized)", color='black')
-ax.set_ylabel("Jumlah Penyewaan", color='black')
-st.pyplot(fig)
 
-# **🛑 Pengaruh Hari Kerja/Libur**
-st.write("### 📅 Pengaruh Hari Kerja terhadap Penyewaan")
-fig, ax = plt.subplots(figsize=(8, 5))
-sns.boxplot(x="workingday", y="cnt", data=df_filtered, palette=["#5F9EA0", "#B0E0E6"], ax=ax)
-ax.set_xlabel("Hari Kerja (0 = Libur, 1 = Kerja)")
-ax.set_ylabel("Jumlah Penyewaan")
-ax.set_title("Distribusi Penyewaan Berdasarkan Hari Kerja")
-st.pyplot(fig)
+### 🔹 Penyewaan Sepeda di Hari Kerja vs Akhir Pekan
+st.subheader("Penyewaan Sepeda: Hari Kerja vs Akhir Pekan")
 
-# **👥 Karakteristik Pengguna**
-st.write("### 👥 Perbandingan Pengguna Casual dan Terdaftar")
-col1, col2 = st.columns(2)
-col1.metric("Total Pengguna Casual", df_filtered['casual'].sum())
-col2.metric("Total Pengguna Terdaftar", df_filtered['registered'].sum())
+if 'weekday' in filtered_day_df.columns:
+    # Menandai apakah hari kerja atau akhir pekan
+    filtered_day_df['weekday_type'] = filtered_day_df['weekday'].apply(lambda x: 'Weekday' if x < 5 else 'Weekend')
 
-fig, ax = plt.subplots(figsize=(8, 5))
-sns.barplot(x=["Casual", "Registered"], y=[df_filtered['casual'].sum(), df_filtered['registered'].sum()], palette=["#5F9EA0", "#B0E0E6"], ax=ax)
-ax.set_ylabel("Jumlah Pengguna")
-ax.set_title("Perbandingan Pengguna Casual dan Terdaftar")
-st.pyplot(fig)
+    # Rata-rata penyewaan per kategori
+    avg_rental = filtered_day_df.groupby('weekday_type')['cnt'].mean().reset_index()
 
-# **🌤️ Pengaruh Kondisi Cuaca**
-st.write("### 🌤️ Pengaruh Kondisi Cuaca terhadap Penyewaan")
-fig, ax = plt.subplots(figsize=(8, 5))
-sns.boxplot(x="weathersit", y="cnt", data=df_filtered, palette="coolwarm", ax=ax)
-ax.set_xlabel("Kondisi Cuaca (1 = Cerah, 2 = Berawan, 3 = Hujan)")
-ax.set_ylabel("Jumlah Penyewaan")
-ax.set_title("Distribusi Penyewaan Berdasarkan Kondisi Cuaca")
-st.pyplot(fig)
+    fig, ax = plt.subplots(figsize=(6, 4))
+    sns.barplot(x='weekday_type', y='cnt', data=avg_rental, ax=ax)
+    ax.set_xlabel("Hari")
+    ax.set_ylabel("Rata-rata Penyewaan")
+    st.pyplot(fig)
+
+    # Menampilkan angka penting
+    weekday_avg = avg_rental.loc[avg_rental['weekday_type'] == 'Weekday', 'cnt'].values[0]
+    weekend_avg = avg_rental.loc[avg_rental['weekday_type'] == 'Weekend', 'cnt'].values[0]
+    st.write(f"📌 Penyewaan lebih tinggi di hari kerja: {weekday_avg:.2f} sepeda/hari dibanding akhir pekan {weekend_avg:.2f} sepeda/hari.")
+else:
+    st.error("⚠ Data 'weekday' tidak ditemukan dalam dataset.")
+
+# Footer
+st.write("📌 Sumber Data: Bike Sharing Dataset")
